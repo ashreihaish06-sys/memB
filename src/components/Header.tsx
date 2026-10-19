@@ -60,10 +60,11 @@ export function Header({
             {/* 도움말 버튼 */}
             <button
               onClick={onOpenHelp}
-              className="p-1.5 text-slate-450 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+              className="p-1.5 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
               title="사용 가이드 및 팁"
+              aria-label="사용 가이드 및 팁"
             >
-              <HelpCircle className="w-5 h-5 text-slate-500" />
+              <HelpCircle className="w-5 h-5 text-slate-500 hover:text-slate-700" />
             </button>
 
             {/* 기록 초기화 버튼 */}
@@ -71,6 +72,7 @@ export function Header({
               onClick={onResetProgress}
               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors cursor-pointer"
               title="암송 기록 초기화"
+              aria-label="암송 기록 초기화"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -96,3 +98,4 @@ export function Header({
     </header>
   );
 }
+

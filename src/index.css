@@ -8,8 +8,34 @@
     background-color: #f8fafc;
     color: #1e293b;
     -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* 앱처럼 보이도록 본문 드래그 선택은 막되, 입력창은 반드시 입력 가능해야 함
+     (iOS Safari 는 user-select:none 인 input 에 타이핑이 안 되는 문제가 있음) */
+  body {
     user-select: none;
     -webkit-user-select: none;
+  }
+
+  input, textarea {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  /* iOS Safari 는 16px 미만 입력창에 포커스하면 화면을 자동 확대함 */
+  input, textarea, select {
+    font-size: max(16px, 1em);
+  }
+}
+
+@layer utilities {
+  /* 가로 스크롤 칩 영역의 스크롤바 숨김 */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -31,4 +57,27 @@
 
 .animate-mic-pulse {
   animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out;
+}
+
+/* 움직임을 줄이도록 설정한 사용자 배려 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-mic-pulse,
+  .animate-fade-in {
+    animation: none;
+  }
 }

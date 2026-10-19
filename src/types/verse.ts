@@ -16,3 +16,4 @@ export interface VerseProgress {
 }
 
 export type CategoryKey = 'ALL' | '새로운 삶' | '그리스도인의 양식' | '하나님을 신뢰함' | '제자의 삶' | '그리스도를 닮아감';
+

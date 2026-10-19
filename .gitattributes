@@ -1,0 +1,5 @@
+# 줄바꿈을 LF로 통일 (Windows 에서 커밋 시 "LF will be replaced by CRLF" 경고 방지)
+* text=auto eol=lf
+*.png binary
+*.ico binary
+

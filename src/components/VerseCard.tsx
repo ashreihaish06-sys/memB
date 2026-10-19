@@ -22,7 +22,15 @@ export function VerseCard({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(verse)}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onSelect(verse);
+        }
+      }}
       className={`group relative bg-white rounded-2xl p-4 border transition-all duration-200 cursor-pointer shadow-xs hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99] ${
         isCompleted
           ? 'border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/20'
@@ -52,6 +60,7 @@ export function VerseCard({
             onClick={(e) => onQuickListen(verse.text, e)}
             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
             title="구절 음성 듣기"
+            aria-label={`${verse.reference} 음성 듣기`}
           >
             <Volume2 className="w-4 h-4" />
           </button>
@@ -65,6 +74,8 @@ export function VerseCard({
                 : 'text-slate-400 hover:text-amber-500 hover:bg-slate-50'
             }`}
             title="즐겨찾기"
+            aria-label={`${verse.reference} 즐겨찾기`}
+            aria-pressed={Boolean(isBookmarked)}
           >
             <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-amber-500' : ''}`} />
           </button>
