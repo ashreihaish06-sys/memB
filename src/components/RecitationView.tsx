@@ -1,7 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { Verse } from '../types/verse';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { toJamoText, matchChunk, getChosungHint, type JamoText } from '../utils/hangulMatcher';
+import {
+  toJamoText,
+  matchChunk,
+  getChosungHint,
+  diffSpokenText,
+  type JamoText,
+  type DiffSegment
+} from '../utils/hangulMatcher';
 import { playSuccessChime } from '../utils/sound';
 import { speak, cancelSpeech } from '../utils/tts';
 import {
@@ -25,6 +32,15 @@ import {
  */
 const FINAL_THRESHOLD = 0.7;
 const INTERIM_THRESHOLD = 0.88;
+
+/** 채점 결과 유지 시간 (3초) */
+const GRADING_HOLD_MS = 3000;
+
+interface GradingResult {
+  segments: DiffSegment[];
+  similarity: number;
+  passed: boolean;
+}
 
 interface RecitationViewProps {
   verse: Verse;
@@ -52,11 +68,13 @@ export function RecitationView({
   const [showHint, setShowHint] = useState<boolean>(false);
   const [heardText, setHeardText] = useState<string>('');
   const [score, setScore] = useState<number>(0);
+  const [gradingResult, setGradingResult] = useState<GradingResult | null>(null);
 
   // 음성 이벤트 콜백에서 최신 값을 읽기 위한 진행 상태
   const progressRef = useRef({ index: 0, consumed: 0 });
   const spokenRef = useRef<JamoText>(EMPTY_SPOKEN);
   const skippedRef = useRef<number[]>([]);
+  const gradingTimerRef = useRef<number | null>(null);
 
   const isFinished = chunkIndex >= totalChunks;
   const isFullyRecited = isFinished && skipped.length === 0;
@@ -64,8 +82,29 @@ export function RecitationView({
   const { isSupported, isListening, errorMessage, startListening, stopListening } =
     useSpeechRecognition({ onTranscript: (text, isFinal) => handleTranscript(text, isFinal) });
 
-  // 화면을 떠나면 낭독 중지
-  useEffect(() => cancelSpeech, []);
+  function clearGradingTimer() {
+    if (gradingTimerRef.current !== null) {
+      window.clearTimeout(gradingTimerRef.current);
+      gradingTimerRef.current = null;
+    }
+  }
+
+  function showGradingFor3Seconds(result: GradingResult) {
+    clearGradingTimer();
+    setGradingResult(result);
+    gradingTimerRef.current = window.setTimeout(() => {
+      setGradingResult(null);
+      gradingTimerRef.current = null;
+    }, GRADING_HOLD_MS);
+  }
+
+  // 화면을 떠나면 낭독 및 채점 타이머 중지
+  useEffect(() => {
+    return () => {
+      cancelSpeech();
+      clearGradingTimer();
+    };
+  }, []);
 
   function finishVerse() {
     stopListening();
@@ -86,7 +125,10 @@ export function RecitationView({
     spokenRef.current = spoken;
 
     const threshold = isFinal ? FINAL_THRESHOLD : INTERIM_THRESHOLD;
+    const prevIndex = p.index;
+    let firstMatchStart = p.consumed;
     let matched = 0;
+    let matchedSimilaritySum = 0;
     let lastSimilarity = 0;
 
     // 한 번에 여러 마디를 이어 말한 경우를 위해 연속으로 통과시킨다
@@ -94,6 +136,10 @@ export function RecitationView({
       const result = matchChunk(chunkJamo[p.index], spoken, p.consumed, threshold);
       lastSimilarity = result.similarity;
       if (!result.isMatch) break;
+      if (matched === 0) {
+        firstMatchStart = result.start;
+      }
+      matchedSimilaritySum += result.similarity;
       p.consumed = result.end;
       p.index += 1;
       matched += 1;
@@ -103,14 +149,53 @@ export function RecitationView({
       playSuccessChime();
       setChunkIndex(p.index);
       setShowHint(false);
+
+      // 방금 통과한 구간에 대해 변환된 음성 텍스트를 맞은 부분(녹색)/틀린 부분(빨간색)으로 3초간 표시
+      const matchedTargetText = verse.chunks.slice(prevIndex, p.index).join(' ');
+      const rawStart =
+        firstMatchStart < spoken.rawIndex.length ? spoken.rawIndex[firstMatchStart] : 0;
+      const rawEnd =
+        p.consumed > 0 && p.consumed - 1 < spoken.rawIndex.length
+          ? spoken.rawIndex[p.consumed - 1] + 1
+          : raw.length;
+      const matchedSpoken = raw.slice(rawStart, rawEnd).trim();
+      const segments = diffSpokenText(matchedTargetText, matchedSpoken || matchedTargetText);
+
+      showGradingFor3Seconds({
+        segments,
+        similarity: Math.round((matchedSimilaritySum / matched) * 100) / 100,
+        passed: true
+      });
+
       lastSimilarity = 0;
       if (p.index >= totalChunks) finishVerse();
     }
 
-    setScore(lastSimilarity);
-    // 아직 소비되지 않은(= 현재 마디를 위해 들린) 부분만 보여준다
+    // 아직 소비되지 않은(= 현재 마디를 위해 들린) 부분 추출
     const startRaw = p.consumed < spoken.rawIndex.length ? spoken.rawIndex[p.consumed] : raw.length;
-    setHeardText(raw.slice(startRaw).trim());
+    const currentHeard = raw.slice(startRaw).trim();
+
+    if (matched === 0 && isFinal && currentHeard.length > 0 && p.index < totalChunks) {
+      // 통과 기준 미달인 발화도 맞은 부분(녹색)/틀린 부분(빨간색)으로 3초간 채점 결과 유지
+      const targetChunk = verse.chunks[p.index];
+      const segments = diffSpokenText(targetChunk, currentHeard);
+      showGradingFor3Seconds({
+        segments,
+        similarity: lastSimilarity,
+        passed: false
+      });
+
+      // 마디 길이의 절반 이상을 말했으나 틀린 경우 다음 재시도를 위해 입력 버퍼를 비움
+      if (spoken.jamo.length - p.consumed >= chunkJamo[p.index].length * 0.5) {
+        p.consumed = spoken.jamo.length;
+        setHeardText('');
+        setScore(0);
+        return;
+      }
+    }
+
+    setScore(lastSimilarity);
+    setHeardText(currentHeard);
   }
 
   function handleStartReciting() {
@@ -140,6 +225,7 @@ export function RecitationView({
 
   function handleRestart() {
     stopListening();
+    clearGradingTimer();
     progressRef.current = { index: 0, consumed: spokenRef.current.jamo.length };
     skippedRef.current = [];
     setSkipped([]);
@@ -148,12 +234,15 @@ export function RecitationView({
     setShowHint(false);
     setScore(0);
     setHeardText('');
+    setGradingResult(null);
   }
 
   function handleClearHeard() {
+    clearGradingTimer();
     progressRef.current.consumed = spokenRef.current.jamo.length;
     setHeardText('');
     setScore(0);
+    setGradingResult(null);
   }
 
   // 낭독 음성이 마이크로 다시 인식되지 않도록 듣기 중이면 마이크부터 끈다
@@ -165,10 +254,15 @@ export function RecitationView({
   function handleBack() {
     stopListening();
     cancelSpeech();
+    clearGradingTimer();
     onBack();
   }
 
   const currentChunk = verse.chunks[chunkIndex] ?? '';
+  const liveDiffSegments = useMemo(
+    () => (heardText && currentChunk ? diffSpokenText(currentChunk, heardText) : []),
+    [currentChunk, heardText]
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -367,9 +461,63 @@ export function RecitationView({
               )}
             </div>
           )}
+
+          {/* 채점 결과 표시 (3초간 유지: 맞은 부분 녹색 / 틀린 부분 빨간색) */}
+          {gradingResult && (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`mt-3 p-4 rounded-2xl border-2 shadow-sm transition-all animate-fade-in ${
+                gradingResult.passed
+                  ? 'bg-emerald-50/60 border-emerald-300'
+                  : 'bg-rose-50/60 border-rose-300'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <span
+                    className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      gradingResult.passed
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-rose-600 text-white'
+                    }`}
+                  >
+                    {gradingResult.passed ? '구간 통과' : '재도전 필요'} · {Math.round(gradingResult.similarity * 100)}%
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    채점 결과 (3초간 표시)
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2 text-[11px] font-bold">
+                  <span className="text-emerald-700 flex items-center space-x-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                    <span>맞음</span>
+                  </span>
+                  <span className="text-rose-600 flex items-center space-x-1">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+                    <span>틀림</span>
+                  </span>
+                </div>
+              </div>
+              <p className="text-base font-bold leading-relaxed break-keep bg-white/90 rounded-xl px-3 py-2 border border-slate-200/80">
+                {gradingResult.segments.map((seg, i) => (
+                  <span
+                    key={i}
+                    className={
+                      seg.correct
+                        ? 'text-emerald-700 bg-emerald-100/70 rounded-xs px-0.5'
+                        : 'text-rose-600 bg-rose-100/80 underline decoration-rose-400 rounded-xs px-0.5'
+                    }
+                  >
+                    {seg.text}
+                  </span>
+                ))}
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* 실시간 음성 인식 결과 */}
+        {/* 실시간 음성 인식 및 채점 텍스트 */}
         {!isFinished && (
           <div className="mt-4">
             <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs">
@@ -382,28 +530,52 @@ export function RecitationView({
                   />
                   <span>
                     {isListening
-                      ? '실시간 음성 인식 중...'
+                      ? '실시간 음성 변환 및 채점 중...'
                       : isReciting
                       ? '마이크가 일시 중지되었습니다'
                       : '구절을 숙지한 뒤 아래 암송 버튼을 눌러주세요'}
                   </span>
                 </span>
-                {heardText && (
-                  <button
-                    onClick={handleClearHeard}
-                    className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    비우기
-                  </button>
-                )}
+                <div className="flex items-center space-x-2">
+                  {heardText && (
+                    <span className="text-[11px] font-semibold">
+                      <span className="text-emerald-600">녹색: 맞음</span>
+                      <span className="text-slate-300 mx-1">|</span>
+                      <span className="text-rose-600">빨간색: 틀림</span>
+                    </span>
+                  )}
+                  {(heardText || gradingResult) && (
+                    <button
+                      onClick={handleClearHeard}
+                      className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      비우기
+                    </button>
+                  )}
+                </div>
               </div>
               <p className="text-sm font-medium text-slate-800 min-h-[1.5rem] break-keep">
-                {heardText ? (
-                  <span className="text-indigo-900 font-semibold">"{heardText}"</span>
+                {heardText && liveDiffSegments.length > 0 ? (
+                  <span className="font-bold">
+                    "
+                    {liveDiffSegments.map((seg, i) => (
+                      <span
+                        key={i}
+                        className={
+                          seg.correct
+                            ? 'text-emerald-600 bg-emerald-50 rounded-xs'
+                            : 'text-rose-600 bg-rose-50 underline decoration-rose-400 rounded-xs'
+                        }
+                      >
+                        {seg.text}
+                      </span>
+                    ))}
+                    "
+                  </span>
                 ) : (
                   <span className="text-slate-400 text-xs">
                     {isReciting
-                      ? '외운 말씀을 또박또박 말하면 맞춘 부분부터 차례대로 표시됩니다.'
+                      ? '외운 말씀을 말하면 텍스트로 변환되어 맞은 부분은 녹색, 틀린 부분은 빨간색으로 표시됩니다.'
                       : '암송 버튼을 누르면 위 문장이 사라지고 음성 인식이 시작됩니다.'}
                   </span>
                 )}
