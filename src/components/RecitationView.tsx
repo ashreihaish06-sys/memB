@@ -47,6 +47,7 @@ export function RecitationView({
   const chunkJamo = useMemo(() => verse.chunks.map((c) => toJamoText(c).jamo), [verse]);
 
   const [chunkIndex, setChunkIndex] = useState<number>(0);
+  const [isReciting, setIsReciting] = useState<boolean>(false);
   const [skipped, setSkipped] = useState<number[]>([]);
   const [showHint, setShowHint] = useState<boolean>(false);
   const [heardText, setHeardText] = useState<string>('');
@@ -112,10 +113,18 @@ export function RecitationView({
     setHeardText(raw.slice(startRaw).trim());
   }
 
-  // 음성이 인식되지 않을 때 현재 마디를 건너뜀 (완료 기록에는 반영되지 않음)
+  function handleStartReciting() {
+    cancelSpeech();
+    setIsReciting(true);
+    startListening();
+  }
+
+  // 음성이 인식되지 않을 때 현재 구간을 건너뜀 (완료 기록에는 반영되지 않음)
   function handleSkipChunk() {
     const p = progressRef.current;
     if (p.index >= totalChunks) return;
+
+    if (!isReciting) setIsReciting(true);
 
     skippedRef.current = [...skippedRef.current, p.index];
     setSkipped(skippedRef.current);
@@ -130,10 +139,12 @@ export function RecitationView({
   }
 
   function handleRestart() {
+    stopListening();
     progressRef.current = { index: 0, consumed: spokenRef.current.jamo.length };
     skippedRef.current = [];
     setSkipped([]);
     setChunkIndex(0);
+    setIsReciting(false);
     setShowHint(false);
     setScore(0);
     setHeardText('');
@@ -191,12 +202,12 @@ export function RecitationView({
       {/* Main Container */}
       <main className="flex-1 max-w-xl w-full mx-auto p-4 flex flex-col justify-between pb-36">
         <div>
-          {/* Step Progress Bar */}
+          {/* 진행 게이지 */}
           <div className="mb-4">
             <div className="flex justify-between items-center text-xs font-semibold text-slate-500 mb-1.5">
-              <span>암송 단계</span>
+              <span>{isReciting ? '암송 진행도' : '전체 구절 확인'}</span>
               <span className="text-indigo-600">
-                {isFinished ? totalChunks : chunkIndex + 1} / {totalChunks} 마디
+                {Math.round((Math.min(chunkIndex, totalChunks) / totalChunks) * 100)}%
               </span>
             </div>
             <div className="flex space-x-1.5">
@@ -208,7 +219,7 @@ export function RecitationView({
                       ? skipped.includes(idx)
                         ? 'bg-amber-400'
                         : 'bg-emerald-500'
-                      : idx === chunkIndex
+                      : isReciting && idx === chunkIndex
                       ? 'bg-indigo-500 animate-pulse'
                       : 'bg-slate-200'
                   }`}
@@ -252,7 +263,7 @@ export function RecitationView({
               >
                 {isFullyRecited
                   ? '마음에 하나님의 말씀이 새겨졌습니다.'
-                  : `건너뛴 마디가 ${skipped.length}개 있어 완료로 기록되지 않았어요.`}
+                  : `건너뛴 구간이 ${skipped.length}개 있어 완료로 기록되지 않았어요.`}
               </p>
 
               <div className="bg-slate-50 rounded-2xl p-4 text-left border border-slate-100 mb-6">
@@ -280,100 +291,80 @@ export function RecitationView({
                 )}
               </div>
             </div>
+          ) : !isReciting ? (
+            /* 1) 암송 시작 전: 전체 문장을 한 번에 제시 */
+            <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm my-2 animate-fade-in">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
+                  전체 구절
+                </span>
+                <span className="text-xs text-slate-400">
+                  암송 버튼을 누르면 문장이 가려집니다
+                </span>
+              </div>
+              <p className="text-lg sm:text-xl font-bold text-slate-900 leading-relaxed tracking-wide break-keep">
+                {verse.text}
+              </p>
+            </div>
           ) : (
-            /* 마디 목록 카드 */
-            <div className="space-y-3 my-2">
-              {verse.chunks.map((chunk, idx) => {
-                if (idx < chunkIndex) {
-                  const wasSkipped = skipped.includes(idx);
-                  return (
-                    <div
-                      key={idx}
-                      className={`p-4 rounded-2xl border flex items-start space-x-3 transition-all ${
-                        wasSkipped
-                          ? 'bg-amber-50/70 border-amber-200/80'
-                          : 'bg-emerald-50/70 border-emerald-200/80'
-                      }`}
-                    >
-                      <div
-                        className={`w-6 h-6 rounded-full text-white flex items-center justify-center shrink-0 mt-0.5 ${
-                          wasSkipped ? 'bg-amber-400' : 'bg-emerald-500'
-                        }`}
-                      >
-                        {wasSkipped ? (
-                          <SkipForward className="w-3.5 h-3.5" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        )}
-                      </div>
-                      <p
-                        className={`flex-1 text-base font-semibold leading-relaxed ${
-                          wasSkipped ? 'text-amber-950' : 'text-emerald-950'
-                        }`}
-                      >
-                        {chunk}
-                      </p>
-                    </div>
-                  );
-                }
+            /* 2) 암송 중: 제시된 문장이 사라지고, 내부적으로 맞춘 부분만 순차 표시 */
+            <div className="p-6 rounded-3xl bg-white border-2 border-indigo-500 shadow-md shadow-indigo-100 my-2 transition-all">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full flex items-center space-x-1">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>암송 중 ({chunkIndex} / {totalChunks})</span>
+                </span>
+                <button
+                  onClick={handleRestart}
+                  className="text-xs text-slate-500 hover:text-indigo-600 flex items-center space-x-1 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>본문 다시 보기</span>
+                </button>
+              </div>
 
-                if (idx === chunkIndex) {
-                  return (
-                    <div
-                      key={idx}
-                      className="p-5 rounded-3xl bg-white border-2 border-indigo-500 shadow-md shadow-indigo-100 transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
-                          현재 마디 ({idx + 1} / {totalChunks})
-                        </span>
-                        <button
-                          onClick={() => handleSpeak(chunk)}
-                          className="text-xs text-slate-500 hover:text-indigo-600 flex items-center space-x-1 cursor-pointer"
+              <div className="min-h-[6rem] flex flex-col justify-center">
+                <p className="text-lg sm:text-xl font-bold leading-relaxed tracking-wide break-keep">
+                  {verse.chunks.map((chunk, idx) => {
+                    if (idx < chunkIndex) {
+                      const wasSkipped = skipped.includes(idx);
+                      return (
+                        <span
+                          key={idx}
+                          className={`inline transition-all duration-300 ${
+                            wasSkipped ? 'text-amber-600' : 'text-emerald-700'
+                          }`}
                         >
-                          <Volume2 className="w-3.5 h-3.5" />
-                          <span>이 마디 듣기</span>
-                        </button>
-                      </div>
+                          {chunk}{' '}
+                        </span>
+                      );
+                    }
+                    if (idx === chunkIndex && showHint) {
+                      return (
+                        <span
+                          key={idx}
+                          className="inline font-mono text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-lg text-base tracking-widest"
+                        >
+                          {getChosungHint(currentChunk)}{' '}
+                        </span>
+                      );
+                    }
+                    return null;
+                  })}
+                  {chunkIndex === 0 && !showHint && (
+                    <span className="text-slate-400 text-sm font-normal">
+                      문장이 가려졌습니다. 처음부터 소리 내어 암송해보세요. (맞춘 부분이 차례대로 나타납니다)
+                    </span>
+                  )}
+                </p>
+              </div>
 
-                      <p className="text-lg sm:text-xl font-bold text-slate-900 leading-relaxed tracking-wide my-2 break-keep">
-                        {chunk}
-                      </p>
-
-                      {showHint && (
-                        <div className="mt-3 p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-amber-900 text-sm font-mono tracking-widest animate-fade-in">
-                          <span className="text-xs font-sans text-amber-600 font-bold block mb-0.5">
-                            💡 초성 힌트
-                          </span>
-                          {getChosungHint(currentChunk)}
-                        </div>
-                      )}
-
-                      {score > 0 && (
-                        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                          <span>음성 일치도</span>
-                          <span className="font-semibold text-indigo-600">{Math.round(score * 100)}%</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-
-                // 아직 차례가 오지 않은 마디 (흐리게)
-                return (
-                  <div
-                    key={idx}
-                    className="p-4 rounded-2xl bg-white/60 border border-slate-200/60 opacity-60 flex items-center space-x-3"
-                  >
-                    <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center shrink-0">
-                      {idx + 1}
-                    </div>
-                    <p className="text-sm text-slate-400 select-none blur-[1.5px] hover:blur-none transition-all">
-                      {chunk}
-                    </p>
-                  </div>
-                );
-              })}
+              {score > 0 && (
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <span>현재 구간 음성 일치도</span>
+                  <span className="font-semibold text-indigo-600">{Math.round(score * 100)}%</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -389,7 +380,13 @@ export function RecitationView({
                       isListening ? 'bg-indigo-600 animate-ping' : 'bg-slate-300'
                     }`}
                   />
-                  <span>{isListening ? '실시간 음성 인식 중...' : '마이크를 켜고 말씀하세요'}</span>
+                  <span>
+                    {isListening
+                      ? '실시간 음성 인식 중...'
+                      : isReciting
+                      ? '마이크가 일시 중지되었습니다'
+                      : '구절을 숙지한 뒤 아래 암송 버튼을 눌러주세요'}
+                  </span>
                 </span>
                 {heardText && (
                   <button
@@ -405,7 +402,9 @@ export function RecitationView({
                   <span className="text-indigo-900 font-semibold">"{heardText}"</span>
                 ) : (
                   <span className="text-slate-400 text-xs">
-                    마이크를 켜고 위 문장을 또박또박 읽으면 자동으로 인식되어 넘어갑니다.
+                    {isReciting
+                      ? '외운 말씀을 또박또박 말하면 맞춘 부분부터 차례대로 표시됩니다.'
+                      : '암송 버튼을 누르면 위 문장이 사라지고 음성 인식이 시작됩니다.'}
                   </span>
                 )}
               </p>
@@ -420,7 +419,10 @@ export function RecitationView({
           <div className="max-w-xl mx-auto flex items-center justify-between">
             {/* 힌트 버튼 */}
             <button
-              onClick={() => setShowHint((prev) => !prev)}
+              onClick={() => {
+                if (!isReciting) setIsReciting(true);
+                setShowHint((prev) => !prev);
+              }}
               className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors cursor-pointer w-16 ${
                 showHint ? 'text-amber-600 bg-amber-50' : 'text-slate-500 hover:bg-slate-100'
               }`}
@@ -432,9 +434,9 @@ export function RecitationView({
             {/* 마이크 메인 버튼 */}
             <div className="relative pb-5">
               <button
-                onClick={isListening ? stopListening : startListening}
+                onClick={isListening ? stopListening : handleStartReciting}
                 disabled={!isSupported}
-                aria-label={isListening ? '음성 인식 중지' : '음성 인식 시작'}
+                aria-label={isListening ? '음성 인식 중지' : '암송 시작'}
                 aria-pressed={isListening}
                 className={`w-16 h-16 rounded-full flex items-center justify-center text-white shadow-xl transition-all cursor-pointer transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
                   isListening
@@ -445,7 +447,7 @@ export function RecitationView({
                 {isListening ? <Mic className="w-7 h-7" /> : <MicOff className="w-7 h-7" />}
               </button>
               <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[11px] font-bold text-slate-500 whitespace-nowrap">
-                {isListening ? '말씀하세요' : '터치하여 시작'}
+                {isListening ? '암송 중 (터치 시 일시정지)' : isReciting ? '이어서 암송' : '암송 시작'}
               </span>
             </div>
 
@@ -453,7 +455,7 @@ export function RecitationView({
             <button
               onClick={handleSkipChunk}
               className="flex flex-col items-center justify-center p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer w-16"
-              title="음성 인식이 잘 안 될 때 이 마디를 건너뜁니다 (완료 기록에는 반영되지 않음)"
+              title="음성 인식이 잘 안 될 때 현재 구간을 건너뜁니다 (완료 기록에는 반영되지 않음)"
             >
               <SkipForward className="w-5 h-5 mb-0.5 text-slate-600" />
               <span className="text-[11px] font-medium">건너뛰기</span>
