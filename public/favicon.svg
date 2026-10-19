@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#4f46e5"/>
+  <defs>
+    <linearGradient id="bookGrad" x1="120" y1="120" x2="392" y2="392" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e0e7ff"/>
+    </linearGradient>
+    <filter id="shadow" x="80" y="80" width="352" height="352" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#1e1b4b" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Holy Book shape -->
+  <g filter="url(#shadow)">
+    <!-- Left Page -->
+    <path d="M120 160C120 146.745 130.745 136 144 136H244V344H144C130.745 344 120 333.255 120 320V160Z" fill="url(#bookGrad)"/>
+    <!-- Right Page -->
+    <path d="M268 136H368C381.255 136 392 146.745 392 160V320C392 333.255 381.255 344 368 344H268V136Z" fill="url(#bookGrad)"/>
+    <!-- Book Spine / Center Divider -->
+    <path d="M244 136H268V344H244V136Z" fill="#c7d2fe"/>
+
+    <!-- Cross on Left Page -->
+    <path d="M174 190H194V290H174V190Z" fill="#4f46e5" rx="3"/>
+    <path d="M156 220H212V238H156V220Z" fill="#4f46e5" rx="3"/>
+
+    <!-- Sound waves on Right Page (Speech recognition symbol) -->
+    <circle cx="316" cy="240" r="16" fill="#4f46e5"/>
+    <path d="M336 216C348 228 348 252 336 264" stroke="#4f46e5" stroke-width="8" stroke-linecap="round"/>
+    <path d="M354 198C374 218 374 262 354 282" stroke="#4f46e5" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <!-- Number 50 badge -->
+  <rect x="206" y="360" width="100" height="42" rx="21" fill="#fbbf24"/>
+  <text x="256" y="388" font-family="-apple-system, sans-serif" font-size="22" font-weight="900" fill="#78350f" text-anchor="middle">50</text>
+</svg>
