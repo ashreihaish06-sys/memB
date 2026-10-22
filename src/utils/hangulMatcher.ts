@@ -283,3 +283,71 @@ export function diffSpokenText(target: string, spoken: string): DiffSegment[] {
   return segments;
 }
 
+export interface VerseEvaluation {
+  segments: DiffSegment[];
+  matchedChars: number;
+  targetChars: number;
+  spokenChars: number;
+  accuracy: number; // 0 - 100 (%)
+  passed: boolean;
+}
+
+/**
+ * 목표 전체 구절(`target`)과 발화 텍스트(`spoken`)를 비교하여
+ * 맞은 부분(녹색) / 틀린 부분(빨간색) 세그먼트와 종합 정확도(일치율)를 계산합니다.
+ */
+export function evaluateVerse(target: string, spoken: string): VerseEvaluation {
+  const trimmedTarget = target.trim();
+  const trimmedSpoken = spoken.trim();
+  const segments = diffSpokenText(trimmedTarget, trimmedSpoken);
+
+  let targetChars = 0;
+  for (let i = 0; i < trimmedTarget.length; i++) {
+    if (LETTER_OR_DIGIT.test(trimmedTarget[i])) targetChars++;
+  }
+
+  let spokenChars = 0;
+  for (let i = 0; i < trimmedSpoken.length; i++) {
+    if (LETTER_OR_DIGIT.test(trimmedSpoken[i])) spokenChars++;
+  }
+
+  let matchedChars = 0;
+  for (const seg of segments) {
+    if (seg.correct) {
+      for (let i = 0; i < seg.text.length; i++) {
+        if (LETTER_OR_DIGIT.test(seg.text[i])) matchedChars++;
+      }
+    }
+  }
+
+  if (targetChars === 0 || spokenChars === 0) {
+    return {
+      segments,
+      matchedChars: 0,
+      targetChars,
+      spokenChars,
+      accuracy: 0,
+      passed: false
+    };
+  }
+
+  const recall = matchedChars / targetChars;
+  const precision = matchedChars / spokenChars;
+  // 전체 구절 암송 평가: 목표 구절 재현율 75% + 발화 정확도 25% 가중치
+  const score = Math.round((recall * 0.75 + precision * 0.25) * 100);
+  const accuracy = Math.min(100, Math.max(0, score));
+
+  // 종합 일치율 75% 이상 & 구절의 70% 이상 발화 시 통과 (발음 흐림, 경미한 조사 오인식 등 포용)
+  const passed = accuracy >= 75 && recall >= 0.7;
+
+  return {
+    segments,
+    matchedChars,
+    targetChars,
+    spokenChars,
+    accuracy,
+    passed
+  };
+}
+
+

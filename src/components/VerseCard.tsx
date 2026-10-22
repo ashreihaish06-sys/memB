@@ -95,7 +95,7 @@ export function VerseCard({
       {/* Footer Info */}
       <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
         <span className="text-slate-400 font-medium">
-          {verse.chunks.length}마디 구성
+          전체 구절 암송
         </span>
 
         {isCompleted ? (

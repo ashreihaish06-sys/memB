@@ -51,12 +51,12 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
           <div>
             <h3 className="font-bold text-slate-900 flex items-center space-x-1.5 mb-2">
               <Mic className="w-4 h-4 text-indigo-600" />
-              <span>실시간 음성인식 암송 방식</span>
+              <span>실시간 음성인식 전체 구절 암송 방식</span>
             </h3>
             <p className="text-xs leading-relaxed text-slate-600">
-              별도의 유료 API 서버 없이 <strong>스마트폰 자체의 음성인식 엔진(Web Speech API)</strong>을 활용합니다.
-              문장이 길어서 생기는 인식 끊김을 방지하기 위해 각 구절을 <strong>자연스러운 마디(구/절)</strong>로 나누어 순서대로 진행합니다.
-              띄어쓰기·문장부호는 무시하고, 발음이 비슷한 오인식은 어느 정도 너그럽게 인정합니다.
+              별도의 유료 API 서버 없이 <strong>기기 자체의 음성인식 엔진(Web Speech API)</strong>을 활용합니다.
+              구절 전체를 기억한 뒤 암송을 시작하면 문장이 가려지며, 음성으로 암송한 내용이 실시간 텍스트로 변환됩니다.
+              맞은 부분은 <strong>녹색</strong>, 틀린 부분은 <strong>빨간색</strong>으로 채점되어 5초간 표시되며, 맞으면 자동으로 다음 구절로 넘어가고 틀리면 5초 후 자동으로 다시 도전할 수 있습니다.
             </p>
           </div>
 
@@ -74,14 +74,14 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
             <div className="flex items-start space-x-2 text-xs">
               <Wifi className="w-4 h-4 text-sky-500 shrink-0 mt-0.5" />
               <div>
-                <strong>인터넷 연결:</strong> 스마트폰의 음성인식은 대부분 인터넷이 연결되어 있어야 동작합니다. 앱 화면과 구절은 오프라인에서도 열리지만, 음성인식은 연결이 필요해요.
+                <strong>인터넷 연결:</strong> 스마트폰의 음성인식은 인터넷이 연결되어 있어야 동작합니다. 앱 화면과 구절은 오프라인에서도 열리지만, 음성인식은 연결이 필요해요.
               </div>
             </div>
 
             <div className="flex items-start space-x-2 text-xs">
               <Volume2 className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
               <div>
-                <strong>발음 듣기:</strong> 발음이 헷갈릴 때는 스피커 버튼을 눌러 낭독을 먼저 들어보세요. (듣는 동안에는 마이크가 꺼집니다)
+                <strong>발음 듣기:</strong> 발음이 헷갈릴 때는 상단 스피커 버튼을 눌러 전체 낭독을 먼저 들어보세요.
               </div>
             </div>
 

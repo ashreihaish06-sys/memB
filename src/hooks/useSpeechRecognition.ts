@@ -247,6 +247,10 @@ export function useSpeechRecognition({ onTranscript }: Options = {}) {
     spawn();
   }, [spawn]);
 
+  const resetTranscript = useCallback(() => {
+    textRef.current = '';
+  }, []);
+
   const stopListening = useCallback(() => {
     wantListeningRef.current = false;
     clearRestartTimer();
@@ -296,6 +300,7 @@ export function useSpeechRecognition({ onTranscript }: Options = {}) {
     isListening,
     errorMessage,
     startListening,
-    stopListening
+    stopListening,
+    resetTranscript
   };
 }
