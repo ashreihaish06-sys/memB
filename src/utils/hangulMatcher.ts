@@ -298,7 +298,7 @@ export interface VerseEvaluation {
  */
 export function evaluateVerse(target: string, spoken: string): VerseEvaluation {
   const trimmedTarget = target.trim();
-  const trimmedSpoken = spoken.trim();
+  const trimmedSpoken = removeConsecutiveDuplicates(spoken.trim());
   const segments = diffSpokenText(trimmedTarget, trimmedSpoken);
 
   let targetChars = 0;
@@ -349,5 +349,92 @@ export function evaluateVerse(target: string, spoken: string): VerseEvaluation {
     passed
   };
 }
+
+/**
+ * 두 발화 텍스트 조각을 중복 없이 자연스럽게 병합합니다.
+ * 모바일 브라우저(특히 Android Chrome)에서 세션 재시작이나 콜백 중복으로 인해
+ * 동일한 단어나 문장이 앞부분에 누적되어 반복되는 현상을 원천 방지합니다.
+ */
+export function mergeTranscripts(prev: string, next: string): string {
+  const p = prev.trim();
+  const n = next.trim();
+
+  if (!p) return n;
+  if (!n) return p;
+  if (p === n) return p;
+
+  // 1) n이 p를 포함하고 있거나 p로 시작하는 경우 (새 텍스트가 이전 텍스트를 포괄)
+  if (n.startsWith(p)) return n;
+  if (n.includes(p)) return n;
+
+  // 2) p가 n을 포함하고 있는 경우 (이전 텍스트가 더 완전함)
+  if (p.startsWith(n) || p.endsWith(n) || p.includes(n)) return p;
+
+  // 3) 어절(단어) 단위 접미사/접두사 오버랩 검사 (예: p의 끝 단어들과 n의 시작 단어들이 겹치는 경우)
+  const pWords = p.split(/\s+/);
+  const nWords = n.split(/\s+/);
+
+  const maxOverlapWords = Math.min(pWords.length, nWords.length);
+  for (let len = maxOverlapWords; len > 0; len--) {
+    const pSlice = pWords.slice(pWords.length - len).join(' ');
+    const nSlice = nWords.slice(0, len).join(' ');
+    if (pSlice === nSlice) {
+      return [...pWords.slice(0, pWords.length - len), ...nWords].join(' ');
+    }
+  }
+
+  // 4) 문자 단위 오버랩 검사 (띄어쓰기 차이 등으로 어절이 정확히 안 맞아도 뒷부분 겹침 제거)
+  const maxCharOverlap = Math.min(p.length, n.length, 30);
+  for (let len = maxCharOverlap; len >= 3; len--) {
+    const pSuffix = p.slice(p.length - len);
+    const nPrefix = n.slice(0, len);
+    if (pSuffix === nPrefix) {
+      return p + n.slice(len);
+    }
+  }
+
+  // 5) 오버랩이 전혀 없는 별개의 문장일 경우 띄어쓰기로 연결
+  return `${p} ${n}`;
+}
+
+/**
+ * 음성 인식 엔진에서 오작동으로 인해 연속으로 반복된 단어나 어절을 제거합니다.
+ * 예: "영접하는 영접하는 자" -> "영접하는 자"
+ * 예: "영접하는 자 영접하는 자" -> "영접하는 자"
+ */
+export function removeConsecutiveDuplicates(text: string): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) return text.trim();
+
+  // 1) 1단어 연속 반복 제거 (예: "영접하는 영접하는" -> "영접하는")
+  const cleaned: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    if (i > 0 && words[i] === words[i - 1]) {
+      continue;
+    }
+    cleaned.push(words[i]);
+  }
+
+  // 2) 2~5단어 구문 연속 반복 제거 (예: "영접하는 자 영접하는 자" -> "영접하는 자")
+  for (let n = 2; n <= 6; n++) {
+    if (cleaned.length < n * 2) continue;
+    let modified = true;
+    while (modified) {
+      modified = false;
+      for (let i = 0; i <= cleaned.length - n * 2; i++) {
+        const chunk1 = cleaned.slice(i, i + n).join(' ');
+        const chunk2 = cleaned.slice(i + n, i + n * 2).join(' ');
+        if (chunk1 === chunk2) {
+          cleaned.splice(i, n);
+          modified = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return cleaned.join(' ');
+}
+
 
 

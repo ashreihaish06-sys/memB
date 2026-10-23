@@ -4,6 +4,7 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import {
   getChosungHint,
   evaluateVerse,
+  removeConsecutiveDuplicates,
   type VerseEvaluation
 } from '../utils/hangulMatcher';
 import { playSuccessChime } from '../utils/sound';
@@ -159,7 +160,7 @@ export function RecitationView({
   /** 실시간 음성 수신 핸들러 */
   function handleTranscript(raw: string, isFinal: boolean) {
     if (isGradingRef.current || isFinished) return;
-    const trimmed = raw.trim();
+    const trimmed = removeConsecutiveDuplicates(raw.trim());
     latestHeardRef.current = trimmed;
     setHeardText(trimmed);
 
@@ -174,16 +175,17 @@ export function RecitationView({
       return;
     }
 
-    // 2) 발화가 일단락(isFinal)되었고, 구절의 50% 이상 발화했을 때 2초 침묵 시 자동 채점
+    // 2) 발화가 일단락(isFinal)되었고, 구절의 70% 이상 발화했을 때 3.5초 침묵 시 자동 채점
+    // (사용자가 중간에 생각하느라 잠시 멈추었을 때 조기 탈락되는 것을 방지)
     clearSilenceTimer();
-    if (isFinal && evaluation.spokenChars >= evaluation.targetChars * 0.5) {
+    if (isFinal && evaluation.spokenChars >= evaluation.targetChars * 0.7) {
       silenceTimerRef.current = window.setTimeout(() => {
         silenceTimerRef.current = null;
         if (!isGradingRef.current && latestHeardRef.current) {
           const finalEval = evaluateVerse(verse.text, latestHeardRef.current);
           startGrading(finalEval);
         }
-      }, 2000);
+      }, 3500);
     }
   }
 

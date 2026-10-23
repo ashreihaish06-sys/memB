@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { unlockAudio } from '../utils/sound';
+import { mergeTranscripts, removeConsecutiveDuplicates } from '../utils/hangulMatcher';
 
 // Web Speech API 타입 선언
 interface SpeechRecognitionEvent extends Event {
@@ -40,6 +41,9 @@ const RecognitionImpl =
 
 export const isSpeechRecognitionSupported = Boolean(RecognitionImpl);
 
+const isAndroid =
+  typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+
 const MESSAGES = {
   unsupported:
     '이 브라우저는 음성 인식을 지원하지 않습니다. 안드로이드는 Chrome, 아이폰은 Safari로 접속해주세요.',
@@ -75,6 +79,7 @@ export function useSpeechRecognition({ onTranscript }: Options = {}) {
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const wantListeningRef = useRef<boolean>(false);
   const restartTimerRef = useRef<number | null>(null);
+  const baseTextRef = useRef<string>('');
   const textRef = useRef<string>(''); // 지금까지의 전체 발화 (인스턴스 재시작 간에도 이어짐)
   const restartStatsRef = useRef({ since: 0, count: 0 });
   const onTranscriptRef = useRef(onTranscript);
@@ -131,11 +136,10 @@ export function useSpeechRecognition({ onTranscript }: Options = {}) {
 
     const rec = new RecognitionImpl();
     rec.lang = 'ko-KR';
-    rec.continuous = true;
+    // 안드로이드 크롬은 continuous=true 시 내부 버퍼 중복 누적 버그가 발생하므로 false로 설정
+    rec.continuous = !isAndroid;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
-
-    const baseText = textRef.current;
 
     rec.onstart = () => {
       if (recognitionRef.current === rec) setIsListening(true);
@@ -153,10 +157,13 @@ export function useSpeechRecognition({ onTranscript }: Options = {}) {
       }
       current = current.trim();
 
+      // 이전 세션 누적 텍스트와 현재 세션 결과를 오버랩/중복 방지 병합 및 연속 중복 어절 제거
+      const merged = mergeTranscripts(baseTextRef.current, current);
+      const cleaned = removeConsecutiveDuplicates(merged);
+      textRef.current = cleaned;
+
       const last = event.results[event.results.length - 1];
-      const full = baseText ? `${baseText} ${current}` : current;
-      textRef.current = full;
-      onTranscriptRef.current?.(full, Boolean(last?.isFinal));
+      onTranscriptRef.current?.(cleaned, Boolean(last?.isFinal));
     };
 
     rec.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -191,6 +198,9 @@ export function useSpeechRecognition({ onTranscript }: Options = {}) {
 
     rec.onend = () => {
       if (recognitionRef.current !== rec) return;
+
+      // 이번 세션에서 확정/인식된 최종 텍스트를 baseTextRef에 보존
+      baseTextRef.current = textRef.current;
 
       if (!wantListeningRef.current) {
         recognitionRef.current = null;
@@ -243,11 +253,14 @@ export function useSpeechRecognition({ onTranscript }: Options = {}) {
     unlockAudio(); // 터치 제스처 안에서 효과음용 오디오를 깨워둠
     setErrorMessage(null);
     wantListeningRef.current = true;
+    baseTextRef.current = '';
+    textRef.current = '';
     restartStatsRef.current = { since: Date.now(), count: 0 };
     spawn();
   }, [spawn]);
 
   const resetTranscript = useCallback(() => {
+    baseTextRef.current = '';
     textRef.current = '';
   }, []);
 
